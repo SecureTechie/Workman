@@ -51,6 +51,12 @@ html, body, #root {
   color: var(--accent);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .conn {
   display: flex;
   align-items: center;

@@ -25,6 +25,7 @@ async def api_status():
     return {"issues": state.get_all(), "steps": state.STEPS}
 
 
+
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
