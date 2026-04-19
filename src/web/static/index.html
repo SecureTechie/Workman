@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workman</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --accent:   #58a6ff;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --purple:   #bc8cff;
+    --font:     'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+
+  /* ── Header ─────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: 48px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    position: fixed; inset: 0 0 auto 0; z-index: 10;
+  }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+  #conn-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+    display: inline-block; margin-right: 6px; transition: background .3s;
+  }
+  #conn-dot.on  { background: var(--green); }
+  #conn-dot.off { background: var(--red); }
+  #conn-label { color: var(--muted); font-size: 11px; }
+
+  /* ── Layout ─────────────────────────────────────── */
+  main {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    grid-template-rows: 1fr;
+    height: 100vh;
+    padding-top: 48px;
+  }
+
+  /* ── Issue panel ─────────────────────────────────── */
+  #issues-panel {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel-title {
+    font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  }
+
+  .issue-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; cursor: pointer; transition: border-color .2s;
+  }
+  .issue-card:hover { border-color: var(--accent); }
+  .issue-card.selected { border-color: var(--accent); background: #1c2230; }
+  .issue-card.failed  { border-color: var(--red); }
+  .issue-card.done    { border-color: var(--green); }
+
+  .issue-id   { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .issue-title { font-size: 13px; color: var(--text); margin-bottom: 10px; line-height: 1.4; }
+
+  .steps {
+    display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
+  }
+  .step-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid var(--border); background: transparent;
+    position: relative;
+  }
+  .step-dot.done    { background: var(--green); border-color: var(--green); }
+  .step-dot.active  { background: var(--accent); border-color: var(--accent); animation: pulse 1s infinite; }
+  .step-dot.failed  { background: var(--red); border-color: var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: .4; }
+  }
+
+  .step-label { font-size: 10px; color: var(--muted); margin-top: 6px; }
+
+  .pr-link { display: inline-block; margin-top: 8px; font-size: 11px; color: var(--green); text-decoration: none; }
+  .pr-link:hover { text-decoration: underline; }
+
+  .error-msg { margin-top: 6px; font-size: 11px; color: var(--red); word-break: break-word; }
+
+  /* ── Log panel ───────────────────────────────────── */
+  #logs-panel {
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #logs-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface); font-size: 11px; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase; flex-shrink: 0;
+  }
+  #log-filter-label { color: var(--accent); }
+
+  #log-console {
+    flex: 1; overflow-y: auto; padding: 14px 16px;
+    font-size: 12px; line-height: 1.7;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-word; }
+  .log-line .ts  { color: var(--muted); user-select: none; }
+  .log-line .msg { color: var(--text); }
+  .log-line.err .msg { color: var(--red); }
+  .log-line.warn .msg { color: var(--yellow); }
+  .log-line.info .msg { color: var(--text); }
+
+  /* ── Empty states ────────────────────────────────── */
+  .empty { color: var(--muted); text-align: center; margin-top: 40px; font-size: 12px; }
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">⚙ WORKMAN</span>
+  <span>
+    <span id="conn-dot"></span>
+    <span id="conn-label">connecting...</span>
+  </span>
+</header>
+
+<main>
+  <aside id="issues-panel">
+    <div class="panel-title">Issues</div>
+    <div id="issue-list"><div class="empty">No issues yet. Waiting for Drips assignments...</div></div>
+  </aside>
+
+  <section id="logs-panel">
+    <div id="logs-header">
+      <span>Logs</span>
+      <span id="log-filter-label">all</span>
+    </div>
+    <div id="log-console"><div class="empty" style="margin-top:80px">Select an issue to filter logs, or see all logs here.</div></div>
+  </section>
+</main>
+
+<script>
+const STEPS = [];
+const issues = {};     // id → issue object
+const logs = [];       // {ts, issue_id, message}
+let selectedId = null;
+
+// ── WebSocket ──────────────────────────────────────────────────────
+const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+let ws;
+
+function connect() {
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => setConn(true);
+  ws.onclose = () => { setConn(false); setTimeout(connect, 3000); };
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
+    if (msg.type === 'init') {
+      if (msg.steps) STEPS.push(...msg.steps);
+      msg.issues.forEach(applyIssue);
+      renderIssues();
+    } else if (msg.type === 'issue_update') {
+      applyIssue(msg.issue);
+      renderIssues();
+    } else if (msg.type === 'log') {
+      appendLog(msg);
+    }
+  };
+}
+
+function setConn(on) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = on ? 'on' : 'off';
+  lbl.textContent = on ? 'connected' : 'reconnecting...';
+}
+
+// ── Data ───────────────────────────────────────────────────────────
+function applyIssue(issue) {
+  issues[issue.id] = issue;
+}
+
+function appendLog(entry) {
+  logs.push(entry);
+  if (logs.length > 2000) logs.shift();
+  if (selectedId === null || entry.issue_id === selectedId || entry.issue_id === null) {
+    renderLogLine(entry);
+  }
+}
+
+// ── Render issues ──────────────────────────────────────────────────
+function renderIssues() {
+  const list = document.getElementById('issue-list');
+  const ids = Object.keys(issues);
+  if (!ids.length) {
+    list.innerHTML = '<div class="empty">No issues yet. Waiting for Drips assignments...</div>';
+    return;
+  }
+  list.innerHTML = '';
+  ids.sort((a, b) => issues[b].started_at.localeCompare(issues[a].started_at))
+     .forEach(id => list.appendChild(buildCard(issues[id])));
+}
+
+function buildCard(issue) {
+  const card = document.createElement('div');
+  card.className = 'issue-card' + (issue.failed ? ' failed' : issue.step === 'done' ? ' done' : '') + (selectedId === issue.id ? ' selected' : '');
+  card.dataset.id = issue.id;
+  card.onclick = () => selectIssue(issue.id);
+
+  const stepIdx = STEPS.indexOf(issue.step);
+
+  const dots = STEPS.map((s, i) => {
+    let cls = 'step-dot';
+    if (issue.failed && i === stepIdx) cls += ' failed';
+    else if (i < stepIdx || issue.step === 'done') cls += ' done';
+    else if (i === stepIdx) cls += ' active';
+    return `<div class="${cls}" title="${s}"></div>`;
+  }).join('');
+
+  const prLink = issue.pr_url
+    ? `<a class="pr-link" href="${issue.pr_url}" target="_blank">↗ View PR</a>` : '';
+  const errMsg = issue.error
+    ? `<div class="error-msg">✗ ${issue.error}</div>` : '';
+
+  card.innerHTML = `
+    <div class="issue-id">${issue.id}</div>
+    <div class="issue-title">${escHtml(issue.title)}</div>
+    <div class="steps">${dots}</div>
+    <div class="step-label">${issue.step}${issue.failed ? ' — failed' : ''}</div>
+    ${prLink}${errMsg}
+  `;
+  return card;
+}
+
+// ── Render logs ────────────────────────────────────────────────────
+const logConsole = document.getElementById('log-console');
+let autoScroll = true;
+
+logConsole.addEventListener('scroll', () => {
+  autoScroll = logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - 30;
+});
+
+function renderLogs() {
+  logConsole.innerHTML = '';
+  const filtered = selectedId
+    ? logs.filter(l => l.issue_id === selectedId || l.issue_id === null)
+    : logs;
+  filtered.forEach(renderLogLine);
+}
+
+function renderLogLine(entry) {
+  const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString() : '';
+  const msg = entry.message || '';
+  const cls = /error|exception|traceback|failed/i.test(msg) ? 'err'
+             : /warn/i.test(msg) ? 'warn' : 'info';
+
+  const line = document.createElement('div');
+  line.className = `log-line ${cls}`;
+  line.innerHTML = `<span class="ts">[${ts}] </span><span class="msg">${escHtml(msg)}</span>`;
+  logConsole.appendChild(line);
+
+  if (autoScroll) logConsole.scrollTop = logConsole.scrollHeight;
+}
+
+// ── Select issue ───────────────────────────────────────────────────
+function selectIssue(id) {
+  selectedId = selectedId === id ? null : id;
+  document.getElementById('log-filter-label').textContent = selectedId
+    ? selectedId.split('#')[1] ? `#${selectedId.split('#')[1]}` : selectedId
+    : 'all';
+  renderIssues();
+  renderLogs();
+}
+
+// ── Utils ──────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+connect();
+</script>
+</body>
+</html>

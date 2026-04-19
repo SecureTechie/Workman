@@ -1,0 +1,21 @@
+services:
+  workman:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Share the host Docker daemon so the pipeline can spin up containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist cloned repos across restarts
+      - workman-repos:/tmp/workman
+      # Mount your secrets (not baked into image)
+      - ./cookies.json:/app/cookies.json:ro
+      - ./.env:/app/.env:ro
+      # Persist the processed-issues state file
+      - ./state.json:/app/state.json
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  workman-repos:
