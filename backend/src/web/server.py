@@ -1,19 +1,23 @@
 import json
-from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from src import state
 
-app = FastAPI(title="Workman")
+app = FastAPI(title="Workman API")
 
-_STATIC = Path(__file__).parent / "static"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten to your Vercel URL after deploy
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard():
-    return (_STATIC / "index.html").read_text()
+@app.get("/api/health")
+async def health():
+    return {"ok": True}
 
 
 @app.get("/api/status")

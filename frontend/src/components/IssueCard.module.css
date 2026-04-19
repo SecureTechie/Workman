@@ -1,0 +1,49 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.card:hover  { border-color: var(--accent); }
+.selected    { border-color: var(--accent) !important; background: #1c2230; }
+.failed      { border-color: var(--red); }
+.done        { border-color: var(--green); }
+
+.issueId  { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.title    { font-size: 13px; color: var(--text); margin-bottom: 10px; line-height: 1.4; word-break: break-word; }
+
+.steps    { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  flex-shrink: 0;
+}
+.doneDot   { background: var(--green);  border-color: var(--green); }
+.activeDot { background: var(--accent); border-color: var(--accent); animation: pulse 1s infinite; }
+.failedDot { background: var(--red);    border-color: var(--red); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.stepLabel { font-size: 10px; color: var(--muted); margin-top: 6px; }
+
+.prLink {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--green);
+  text-decoration: none;
+}
+.prLink:hover { text-decoration: underline; }
+
+.error {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--red);
+  word-break: break-word;
+}

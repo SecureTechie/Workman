@@ -1,0 +1,8 @@
+.venv/
+.env
+cookies.json
+state.json
+workman.log
+__pycache__/
+*.pyc
+.claude/
