@@ -108,7 +108,13 @@ async def main_async(once: bool) -> None:
         return
 
     # Run: broadcaster + web server + poll loop, all concurrently
-    config_uv = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="warning")
+    # ws_ping_interval=None disables the websockets library's built-in PING frames.
+    # Render's proxy silently drops them, causing keepalive timeout errors on the server.
+    # The frontend sends application-level "ping" text messages every 30s instead.
+    config_uv = uvicorn.Config(
+        app, host="0.0.0.0", port=8000, log_level="warning",
+        ws_ping_interval=None,
+    )
     server = uvicorn.Server(config_uv)
 
     await asyncio.gather(
