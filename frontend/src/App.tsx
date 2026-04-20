@@ -9,7 +9,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const issueList = Object.values(issues).sort(
-    (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
+    (a, b) =>
+      new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
   );
 
   const toggleSelect = (id: string) =>

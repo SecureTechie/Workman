@@ -7,10 +7,10 @@
   --border: #2c2c2c;
   --text: #e0e0e0;
   --muted: #6b6b6b;
-  --accent: #ffb703;
-  --green: #4caf50;
-  --yellow: #ffb703;
-  --red: #ef5350;
+  --accent: #ec7b03;
+  --green: green;
+  --yellow: #ec7b03;
+  --red: red;
   --font: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   --font-header: "Raleway", sans-serif;
   --font-log: "Saira Stencil", monospace;
@@ -113,7 +113,7 @@ body,
 .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  /* border-radius: 50%; */
   background: var(--muted);
   transition: background 0.3s;
 }
