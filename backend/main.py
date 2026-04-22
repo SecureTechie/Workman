@@ -23,6 +23,8 @@ from src.github.client import GitHubClient
 from src.pipeline import run_pipeline
 from src.web.server import app
 
+# ---------------- LOGGING ---------------- #
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -37,6 +39,8 @@ STATE_FILE = Path("state.json")
 MAX_RETRIES = 3
 
 
+# ---------------- STATE ---------------- #
+
 def load_processed() -> tuple[set[str], dict[str, int]]:
     if STATE_FILE.exists():
         try:
@@ -45,7 +49,7 @@ def load_processed() -> tuple[set[str], dict[str, int]]:
                 raise ValueError("State file is not a JSON object")
             return set(data.get("processed", [])), data.get("failures", {})
         except (json.JSONDecodeError, ValueError):
-            logger.warning(f"Corrupted {STATE_FILE}, starting with empty state")
+            logger.warning(f"Corrupted {STATE_FILE}, starting fresh")
     return set(), {}
 
 
@@ -54,6 +58,8 @@ def save_processed(processed: set[str], failures: dict[str, int]) -> None:
         json.dumps({"processed": list(processed), "failures": failures}, indent=2)
     )
 
+
+# ---------------- POLL LOOP ---------------- #
 
 async def poll_loop(
     watcher: DripsWatcher, processed: set[str], failures: dict[str, int]
@@ -73,7 +79,7 @@ async def check_and_process(
     try:
         issues = await watcher.get_assigned_issues()
     except Exception as e:
-        msg = f"Failed to fetch issues from Drips: {e}"
+        msg = f"Failed to fetch issues: {e}"
         logger.error(msg)
         state.log(None, f"ERROR: {msg}")
         return
@@ -83,12 +89,6 @@ async def check_and_process(
         for i in issues
         if i.id not in processed and failures.get(i.id, 0) < MAX_RETRIES
     ]
-
-    for i in issues:
-        if i.id not in processed and failures.get(i.id, 0) >= MAX_RETRIES:
-            logger.warning(
-                f"Skipping {i.id} — failed {failures[i.id]} times, giving up"
-            )
 
     if not candidates:
         logger.info("No new assigned issues.")
@@ -106,30 +106,15 @@ async def check_and_process(
                 issue.repo_name,
                 issue.issue_number,
             )
-        except Exception as e:
-            logger.warning(
-                f"Failed to check existing PR for {issue.id}, will process anyway: {e}"
-            )
+        except Exception:
             pr_url = None
 
         if pr_url:
-            logger.info(f"Skipping {issue.id} — PR already exists: {pr_url}")
-            state.log(issue.id, f"PR already exists: {pr_url}")
+            logger.info(f"Skipping {issue.id} — PR exists")
             processed.add(issue.id)
             save_processed(processed, failures)
         else:
             actionable.append(issue)
-
-    if not actionable:
-        logger.info("All issues already have PRs.")
-        state.log(None, "All candidates already have PRs — nothing to process.")
-        return
-
-    logger.info(f"New issues: {[i.id for i in actionable]}")
-
-    for issue in actionable:
-        state.upsert_issue(issue.id, title=issue.title, step="queued")
-        state.log(issue.id, f"Issue queued: {issue.title}")
 
     for issue in actionable:
         logger.info(f"Processing {issue.id}...")
@@ -142,26 +127,16 @@ async def check_and_process(
         except Exception as e:
             failures[issue.id] = failures.get(issue.id, 0) + 1
             save_processed(processed, failures)
-            logger.error(
-                f"Pipeline failed for {issue.id} "
-                f"(attempt {failures[issue.id]}/{MAX_RETRIES}): {e}",
-                exc_info=True,
-            )
-            state.log(
-                issue.id,
-                f"Attempt {failures[issue.id]}/{MAX_RETRIES} failed: {e}",
-            )
+            logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
 
+
+# ---------------- MAIN ---------------- #
 
 async def main_async(once: bool) -> None:
     _validate_config()
 
     loop = asyncio.get_event_loop()
     state.init(loop)
-
-    ws_handler = state.StateLogHandler()
-    ws_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
-    logging.getLogger().addHandler(ws_handler)
 
     watcher = DripsWatcher()
     processed, failures = load_processed()
@@ -170,23 +145,24 @@ async def main_async(once: bool) -> None:
         await check_and_process(watcher, processed, failures)
         return
 
+    # 🔥 CRITICAL FOR RENDER
     port = int(os.environ.get("PORT", 8000))
 
     config_uv = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=port,
-        log_level="warning",
-        ws_ping_interval=None,
+        log_level="info",
     )
     server = uvicorn.Server(config_uv)
 
     await asyncio.gather(
-        state.broadcaster(),
         server.serve(),
         poll_loop(watcher, processed, failures),
     )
 
+
+# ---------------- VALIDATION ---------------- #
 
 def _validate_config() -> None:
     missing = [
@@ -199,12 +175,21 @@ def _validate_config() -> None:
         if not v
     ]
     if missing:
-        logger.error(f"Missing env vars: {', '.join(missing)} — copy .env.example to .env")
+        logger.error(f"Missing env vars: {', '.join(missing)}")
         sys.exit(1)
 
 
+# ---------------- ENTRY ---------------- #
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--once", action="store_true", help="One poll cycle, no web server")
+    parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
-    asyncio.run(main_async(once=args.once))
+
+    try:
+        asyncio.run(main_async(once=args.once))
+    except Exception as e:
+        import traceback
+        print("STARTUP CRASH:", repr(e))
+        traceback.print_exc()
+        raise
