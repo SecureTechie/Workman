@@ -7,7 +7,7 @@ load_dotenv()
 # Required — validated at startup in main.py
 GITHUB_TOKEN      = os.getenv("GITHUB_TOKEN")
 GITHUB_USERNAME   = os.getenv("GITHUB_USERNAME")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "300"))
 
