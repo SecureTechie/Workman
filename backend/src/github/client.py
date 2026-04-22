@@ -21,7 +21,7 @@ class GitHubClient:
     def __init__(self):
         self.g = Github(config.GITHUB_TOKEN)
         self.username = config.GITHUB_USERNAME
-        self.user = self.g.get_user(self.username)
+        self.user = self.g.get_user()
 
     def get_issue_details(self, owner: str, repo_name: str, issue_number: int) -> dict:
         repo = self.g.get_repo(f"{owner}/{repo_name}")
