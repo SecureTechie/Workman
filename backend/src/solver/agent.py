@@ -3,7 +3,7 @@ import logging
 import shlex
 from pathlib import Path
 
-import anthropic
+from openai import OpenAI
 
 import config
 from src.docker.manager import NativeRunner
@@ -12,71 +12,125 @@ logger = logging.getLogger(__name__)
 
 TOOLS = [
     {
-        "name": "read_file",
-        "description": "Read the contents of a file in the repository.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"}
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read the contents of a file in the repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to repo root",
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": False,
             },
-            "required": ["path"],
+            "strict": True,
         },
     },
     {
-        "name": "write_file",
-        "description": "Write (create or overwrite) a file in the repository.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"},
-                "content": {"type": "string", "description": "Full file content"},
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write (create or overwrite) a file in the repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to repo root",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full file content",
+                    },
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
             },
-            "required": ["path", "content"],
+            "strict": True,
         },
     },
     {
-        "name": "list_files",
-        "description": "List files and directories at a given path.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root. Use '.' for root."}
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories at a given path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to repo root. Use '.' for root.",
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": False,
             },
-            "required": ["path"],
+            "strict": True,
         },
     },
     {
-        "name": "search_code",
-        "description": "Search for a text pattern across files (grep). Returns matching lines.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string", "description": "Text or regex to search for"},
-                "path": {"type": "string", "description": "Directory or file to search in (default: '.')", "default": "."},
+        "type": "function",
+        "function": {
+            "name": "search_code",
+            "description": "Search for a text pattern across files (grep). Returns matching lines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Text or regex to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file to search in (default: '.')",
+                    },
+                },
+                "required": ["pattern"],
+                "additionalProperties": False,
             },
-            "required": ["pattern"],
+            "strict": True,
         },
     },
     {
-        "name": "run_command",
-        "description": "Run a shell command in the repository directory (e.g. run tests, install packages, build).",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Shell command to execute"}
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Run a shell command in the repository directory (e.g. run tests, install packages, build).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to execute",
+                    }
+                },
+                "required": ["command"],
+                "additionalProperties": False,
             },
-            "required": ["command"],
+            "strict": True,
         },
     },
     {
-        "name": "finish",
-        "description": "Call this when the fix is complete and tests pass. Provide a summary of changes.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "summary": {"type": "string", "description": "Human-readable summary of what was changed and why"}
+        "type": "function",
+        "function": {
+            "name": "finish",
+            "description": "Call this when the fix is complete and tests pass. Provide a summary of changes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Human-readable summary of what was changed and why",
+                    }
+                },
+                "required": ["summary"],
+                "additionalProperties": False,
             },
-            "required": ["summary"],
+            "strict": True,
         },
     },
 ]
@@ -107,38 +161,33 @@ Rules:
   environment, tooling, or whether verification was run.
 """
 
-
-PRIMARY_MODEL = "claude-opus-4-7"
-FALLBACK_MODEL = "claude-sonnet-4-6"
+PRIMARY_MODEL = "gpt-4.1"
+FALLBACK_MODEL = "gpt-4.1-mini"
 
 
 class IssueSolver:
     def __init__(self, runner: NativeRunner, repo_path: Path):
-        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
         self.runner = runner
         self.repo_path = repo_path
         self.model = PRIMARY_MODEL
 
     def _create(self, messages: list[dict]):
         try:
-            return self.client.messages.create(
+            return self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=8096,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
                 messages=messages,
+                tools=TOOLS,
             )
-        except (anthropic.NotFoundError, anthropic.BadRequestError) as e:
+        except Exception as e:
             if self.model != PRIMARY_MODEL:
                 raise
             logger.warning(f"{self.model} unavailable ({e}); falling back to {FALLBACK_MODEL}")
             self.model = FALLBACK_MODEL
-            return self.client.messages.create(
+            return self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=8096,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
                 messages=messages,
+                tools=TOOLS,
             )
 
     def solve(
@@ -152,12 +201,18 @@ class IssueSolver:
             tools_section = (
                 f"\n\nVerification binaries available on PATH: {', '.join(available_tools)}."
             )
+
         user_message = (
             f"# Issue: {issue_title}\n\n"
             f"{issue_body}{tools_section}\n\n"
             "Please fix this issue. Start by exploring the repository structure."
         )
-        messages: list[dict] = [{"role": "user", "content": user_message}]
+
+        messages: list[dict] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
+
         iterations = 0
 
         while iterations < config.MAX_SOLVER_ITERATIONS:
@@ -165,42 +220,63 @@ class IssueSolver:
             logger.info(f"Solver iteration {iterations} (model={self.model})")
 
             response = self._create(messages)
-            messages.append({"role": "assistant", "content": response.content})
+            message = response.choices[0].message
 
-            if response.stop_reason == "end_turn":
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        return block.text
-                return "Fix completed."
+            assistant_message = {
+                "role": "assistant",
+            }
 
-            if response.stop_reason != "tool_use":
-                logger.warning(f"Unexpected stop reason: {response.stop_reason}")
-                break
+            if message.content:
+                assistant_message["content"] = message.content
+            else:
+                assistant_message["content"] = ""
 
-            tool_results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
+            if message.tool_calls:
+                assistant_message["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in message.tool_calls
+                ]
 
-                logger.info(f"Tool: {block.name}({json.dumps(block.input)[:120]})")
+            messages.append(assistant_message)
 
-                if block.name == "finish":
-                    summary = block.input.get("summary", "Issue fixed.")
-                    logger.info(f"Solver finished: {summary}")
-                    tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": "Done."})
-                    messages.append({"role": "user", "content": tool_results})
-                    return summary
+            if not message.tool_calls:
+                return message.content or "Fix completed."
 
-                result = self._dispatch(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result[:8000],
-                })
+            for tool_call in message.tool_calls:
+                logger.info(
+                    f"Tool: {tool_call.function.name}({tool_call.function.arguments[:120]})"
+                )
 
-            messages.append({"role": "user", "content": tool_results})
+                try:
+                    tool_input = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError as e:
+                    result = f"ERROR: Invalid JSON tool arguments: {e}"
+                else:
+                    if tool_call.function.name == "finish":
+                        summary = tool_input.get("summary", "Issue fixed.")
+                        logger.info(f"Solver finished: {summary}")
+                        return summary
 
-        raise RuntimeError(f"Solver hit max iterations ({config.MAX_SOLVER_ITERATIONS}) without finishing")
+                    result = self._dispatch(tool_call.function.name, tool_input)
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result[:8000],
+                    }
+                )
+
+        raise RuntimeError(
+            f"Solver hit max iterations ({config.MAX_SOLVER_ITERATIONS}) without finishing"
+        )
 
     def _dispatch(self, name: str, inp: dict) -> str:
         if name == "read_file":
