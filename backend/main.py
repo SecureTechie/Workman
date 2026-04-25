@@ -130,14 +130,22 @@ async def check_and_process(
         processed.add(issue.id)
         failures.pop(issue.id, None)
         save_processed(processed, failures)
-    except RateLimitError as e:
-        # Do not count as a failure — just stop this cycle and retry next poll.
-        logger.warning(f"Rate limit hit for {issue.id}, will retry next cycle: {e}")
-        state.log(issue.id, f"Rate limit hit — will retry next poll cycle")
     except Exception as e:
+        is_rate_limit = isinstance(e, RateLimitError)
+        if is_rate_limit:
+            logger.warning(f"Rate limit hit for {issue.id}, will retry next cycle: {e}")
+        else:
+            logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
         failures[issue.id] = failures.get(issue.id, 0) + 1
         save_processed(processed, failures)
-        logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
+        if failures[issue.id] >= MAX_RETRIES:
+            logger.warning(f"Skipping issue after multiple failed attempts: {issue.id}")
+            state.log(issue.id, "Skipping issue after multiple failed attempts")
+            state.upsert_issue(issue.id, step="skipped", failed=True)
+            processed.add(issue.id)
+            save_processed(processed, failures)
+        else:
+            state.log(issue.id, f"{'Rate limit hit' if is_rate_limit else 'Pipeline failed'} — will retry next poll cycle ({failures[issue.id]}/{MAX_RETRIES} attempts)")
 
 
 # ---------------- MAIN ---------------- #
