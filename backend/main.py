@@ -22,6 +22,7 @@ from src.drips.watcher import DripsWatcher
 from src.github.client import GitHubClient
 from src.pipeline import run_pipeline
 from src.solver.agent import RateLimitError
+from src.solver.classifier import PRIORITY, classify
 from src.web.server import app
 
 # ---------------- LOGGING ---------------- #
@@ -120,10 +121,26 @@ async def check_and_process(
     if not actionable:
         return
 
-    # Process exactly one issue per cycle — avoids hammering the AI provider
-    # and keeps rate-limit recovery simple.
-    issue = actionable[0]
-    logger.info(f"Processing {issue.id}...")
+    # Classify every candidate, skip HARD immediately, sort EASY → MEDIUM.
+    ranked = []
+    for issue in actionable:
+        difficulty = classify(issue)
+        if difficulty == "HARD":
+            logger.info(f"Skipping complex task — will revisit later: {issue.id} [{difficulty}]")
+            state.log(issue.id, "Skipping complex task — will revisit later")
+            state.upsert_issue(issue.id, step="skipped", failed=False)
+            processed.add(issue.id)
+            save_processed(processed, failures)
+        else:
+            ranked.append((issue, difficulty))
+
+    if not ranked:
+        logger.info("All actionable issues were classified as HARD — nothing to process.")
+        return
+
+    ranked.sort(key=lambda x: PRIORITY[x[1]])
+    issue, difficulty = ranked[0]
+    logger.info(f"Processing {issue.id} [{difficulty}]...")
     try:
         pr_url = await asyncio.to_thread(run_pipeline, issue)
         logger.info(f"SUCCESS — PR: {pr_url}")
