@@ -384,8 +384,13 @@ class GeminiSolver:
         )
 
         gemini_tools = _to_gemini_tools()
-        contents = [
-            {"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + user_message}]}
+        # contents is a list of gtypes.Content objects — the SDK owns the types,
+        # never use raw dicts or private attributes like p._raw.
+        contents: list[gtypes.Content] = [
+            gtypes.Content(
+                role="user",
+                parts=[gtypes.Part(text=SYSTEM_PROMPT + "\n\n" + user_message)],
+            )
         ]
 
         iterations = 0
@@ -403,22 +408,27 @@ class GeminiSolver:
                 logger.error(f"Gemini API error: {e}")
                 raise
 
-            candidate = response.candidates[0]
-            parts = candidate.content.parts
+            logger.info("Gemini response received successfully")
 
-            # Append assistant turn
-            contents.append({"role": "model", "parts": [p._raw for p in parts]})
+            # Append the model turn using the Content object the SDK returned —
+            # this is the only safe way to carry it forward without touching internals.
+            contents.append(response.candidates[0].content)
 
             # Collect function calls from this turn
-            fn_calls = [p.function_call for p in parts if p.function_call is not None]
+            fn_calls = [
+                p.function_call
+                for p in response.candidates[0].content.parts
+                if p.function_call is not None
+            ]
 
             if not fn_calls:
-                # Text-only response — extract and return
-                text = "".join(p.text for p in parts if p.text)
+                # Text-only response — response.text is the canonical accessor.
+                text = response.text
+                logger.info("Gemini response received successfully")
                 return text or "Fix completed."
 
-            # Execute each tool call and collect results
-            tool_results = []
+            # Execute each tool call and feed results back as a user turn.
+            tool_parts: list[gtypes.Part] = []
             for fc in fn_calls:
                 name = fc.name
                 args = dict(fc.args)
@@ -430,14 +440,16 @@ class GeminiSolver:
                     return summary
 
                 result = self._dispatch(name, args)
-                tool_results.append({
-                    "function_response": {
-                        "name": name,
-                        "response": {"output": result[:8000]},
-                    }
-                })
+                tool_parts.append(
+                    gtypes.Part(
+                        function_response=gtypes.FunctionResponse(
+                            name=name,
+                            response={"output": result[:8000]},
+                        )
+                    )
+                )
 
-            contents.append({"role": "user", "parts": tool_results})
+            contents.append(gtypes.Content(role="user", parts=tool_parts))
 
         raise RuntimeError(
             f"Solver hit max iterations ({config.MAX_SOLVER_ITERATIONS}) without finishing"
