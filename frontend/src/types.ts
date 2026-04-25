@@ -32,10 +32,15 @@ export interface QueueItem {
   difficulty: "EASY" | "MEDIUM" | "HARD" | "UNKNOWN";
   score: number;
   status: string;
+  current_step: string;
+  progress_percent: number;
+  started_at: string | null;
+  updated_at: string | null;
   reason: string | null;
   failures: number;
   priority: boolean;
   is_current: boolean;
+  stalled: boolean;
   rank: number;
 }
 

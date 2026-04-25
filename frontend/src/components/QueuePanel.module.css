@@ -175,6 +175,70 @@
   opacity: 0.75;
 }
 
+.stalled {
+  border-color: var(--red);
+}
+
+.badgeStalled {
+  composes: badge;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.stallWarning {
+  font-family: var(--font-header);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--red);
+  letter-spacing: 0.5px;
+}
+
+.progressWrap {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progressMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepLabel {
+  font-family: var(--font-header);
+  font-size: 10px;
+  color: var(--yellow);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.progressPct {
+  font-family: var(--font-header);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.elapsed {
+  font-family: var(--font-header);
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.progressBar {
+  height: 3px;
+  background: var(--border);
+  width: 100%;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--yellow);
+  transition: width 0.4s ease;
+}
+
 .fb {
   font-family: var(--font-header);
   font-size: 10px;
