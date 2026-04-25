@@ -177,6 +177,8 @@ def _validate_config() -> None:
     if missing:
         logger.error(f"Missing env vars: {', '.join(missing)}")
         sys.exit(1)
+    if not config.DASHBOARD_TOKEN:
+        logger.warning("DASHBOARD_TOKEN is not set — dashboard is unsecured")
 
 
 # ---------------- ENTRY ---------------- #

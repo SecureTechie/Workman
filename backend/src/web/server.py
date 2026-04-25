@@ -1,12 +1,14 @@
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, HTTPException, Query, Security, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 import config
 from src import state
+
+logger = logging.getLogger("workman.web")
 
 _LOG_RANGES = {
     "1h": timedelta(hours=1),
@@ -20,18 +22,24 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS,
     allow_methods=["GET"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "x-token"],
 )
 
-_bearer = HTTPBearer(auto_error=False)
+
+def _resolve_token(request: Request, token: str = "") -> str:
+    """Extract token from ?token= query param or x-token header."""
+    return token or request.headers.get("x-token", "")
 
 
-def _check_header(credentials: HTTPAuthorizationCredentials | None) -> None:
-    """Verify Bearer token from Authorization header. No-op if DASHBOARD_TOKEN is unset."""
+def _check_token(route: str, token: str) -> None:
+    """Validate token if DASHBOARD_TOKEN is set. Raises 403 on failure."""
+    logger.info("Request received: %s | token present: %s", route, bool(token))
     if not config.DASHBOARD_TOKEN:
         return
-    if not credentials or credentials.credentials != config.DASHBOARD_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    if token != config.DASHBOARD_TOKEN:
+        logger.warning("Request rejected: %s | token invalid", route)
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    logger.info("Request allowed: %s", route)
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
@@ -40,33 +48,30 @@ async def health():
 
 
 @app.get("/api/status")
-async def api_status(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)):
-    _check_header(credentials)
+async def api_status(request: Request, token: str = Query(default="")):
+    _check_token("/api/status", _resolve_token(request, token))
     return {"issues": state.get_all(), "steps": state.STEPS}
 
 
 @app.get("/api/logs")
-async def api_logs(
-    range: str = Query("1h"),
-    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
-):
-    _check_header(credentials)
+async def api_logs(request: Request, range: str = Query("1h"), token: str = Query(default="")):
+    _check_token("/api/logs", _resolve_token(request, token))
     if range not in _LOG_RANGES:
         raise HTTPException(status_code=400, detail=f"range must be one of: {', '.join(_LOG_RANGES)}")
     since = (datetime.now(timezone.utc) - _LOG_RANGES[range]).isoformat()
     return {"logs": state.get_logs_since(since), "range": range}
 
 
-# WebSocket auth uses a query parameter because browsers cannot set custom
-# headers on WebSocket upgrade requests. The token is not logged by uvicorn
-# at the default log level, but be aware it may appear in proxy / CDN access
-# logs. Use DASHBOARD_TOKEN only in trusted network environments.
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket, token: str = Query(default="")):
+    resolved = token or websocket.headers.get("x-token", "")
+    logger.info("WebSocket request received | token present: %s", bool(resolved))
     await websocket.accept()
-    if config.DASHBOARD_TOKEN and token != config.DASHBOARD_TOKEN:
+    if config.DASHBOARD_TOKEN and resolved != config.DASHBOARD_TOKEN:
+        logger.warning("WebSocket rejected | token invalid")
         await websocket.close(code=1008, reason="Unauthorized")
         return
+    logger.info("WebSocket allowed")
 
     state.register_ws(websocket)
     try:
