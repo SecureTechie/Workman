@@ -3,7 +3,8 @@ import type { Issue, LogEntry, LogRange, Step, WsMessage } from "../types";
 
 const MAX_LOGS = 10000;
 
-const API_URL: string = import.meta.env.VITE_API_URL;
+const API_URL: string = import.meta.env.VITE_API_URL
+  ?? (() => { throw new Error("VITE_API_URL is not set"); })();
 const TOKEN: string = import.meta.env.VITE_DASHBOARD_TOKEN ?? "";
 const WS_BASE = API_URL.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws";
 const WS_URL = TOKEN ? `${WS_BASE}?token=${encodeURIComponent(TOKEN)}` : WS_BASE;
