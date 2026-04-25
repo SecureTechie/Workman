@@ -313,3 +313,31 @@ body,
 }
 .ctrl-feedback--ok  { color: var(--green); }
 .ctrl-feedback--err { color: var(--red); }
+
+/* ── tab switcher (logs / queue) ── */
+.tab-switcher {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--font-header);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 0 4px 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover {
+  color: var(--text);
+}
+.tab-btn--active {
+  color: var(--yellow);
+  border-bottom-color: var(--yellow);
+}

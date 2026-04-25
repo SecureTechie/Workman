@@ -108,3 +108,23 @@ async function control(action: "skip-current" | "pause" | "resume"): Promise<voi
   const r = await fetch(url, { method: "POST" });
   if (!r.ok) throw new Error(`${action} failed: ${r.status}`);
 }
+
+export async function fetchQueue(includeDone = false) {
+  const params = new URLSearchParams();
+  if (TOKEN) params.set("token", TOKEN);
+  if (includeDone) params.set("include_done", "true");
+  const r = await fetch(`${API_URL}/api/issues/queue?${params}`);
+  if (!r.ok) throw new Error(`queue fetch failed: ${r.status}`);
+  const data = await r.json();
+  return data.queue as import("../types").QueueItem[];
+}
+
+export async function retryTask(repo: string, issue_number: number): Promise<void> {
+  const params = TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : "";
+  const r = await fetch(`${API_URL}/api/control/retry-task${params}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, issue_number }),
+  });
+  if (!r.ok) throw new Error(`retry failed: ${r.status}`);
+}

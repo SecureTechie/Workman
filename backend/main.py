@@ -40,6 +40,10 @@ logger = logging.getLogger("workman")
 STATE_FILE = Path("state.json")
 MAX_RETRIES = 3
 
+# Exposed so the retry endpoint can mutate them without a restart.
+_processed: set[str] = set()
+_failures: dict[str, int] = {}
+
 
 # ---------------- STATE ---------------- #
 
@@ -125,21 +129,26 @@ async def check_and_process(
     ranked = []
     for issue in actionable:
         difficulty = classify(issue)
+        score = {"EASY": 0, "MEDIUM": 1, "HARD": 2}[difficulty]
         if difficulty == "HARD":
             logger.info(f"Skipping complex task — will revisit later: {issue.id} [{difficulty}]")
             state.log(issue.id, "Skipping complex task — will revisit later")
             state.upsert_issue(issue.id, step="skipped", failed=False)
+            state.upsert_queue_meta(issue.id, difficulty=difficulty, score=score,
+                                    reason="Complex task — revisit later", status="skipped")
             processed.add(issue.id)
             save_processed(processed, failures)
         else:
-            ranked.append((issue, difficulty))
+            state.upsert_queue_meta(issue.id, difficulty=difficulty, score=score,
+                                    reason=None, status="queued")
+            ranked.append((issue, difficulty, score))
 
     if not ranked:
         logger.info("All actionable issues were classified as HARD — nothing to process.")
         return
 
-    ranked.sort(key=lambda x: PRIORITY[x[1]])
-    issue, difficulty = ranked[0]
+    ranked.sort(key=lambda x: (0 if state.is_priority(x[0].id) else 1, x[2]))
+    issue, difficulty, score = ranked[0]
 
     if state.is_paused():
         logger.info("Bot is paused — skipping processing this cycle")
@@ -148,12 +157,15 @@ async def check_and_process(
 
     state.set_current_issue(issue.id)
     state.clear_skip()
+    state.upsert_queue_meta(issue.id, status="processing")
     logger.info(f"Processing {issue.id} [{difficulty}]...")
     try:
         pr_url = await asyncio.to_thread(run_pipeline, issue)
         logger.info(f"SUCCESS — PR: {pr_url}")
         processed.add(issue.id)
         failures.pop(issue.id, None)
+        state.set_priority(issue.id, False)
+        state.upsert_queue_meta(issue.id, status="done")
         save_processed(processed, failures)
     except Exception as e:
         is_rate_limit = isinstance(e, RateLimitError)
@@ -162,10 +174,13 @@ async def check_and_process(
             logger.info(f"Issue {issue.id} skipped by user request")
             state.log(issue.id, "Skipped by user request — will retry next cycle")
             state.upsert_issue(issue.id, step="skipped", failed=False)
+            state.upsert_queue_meta(issue.id, status="skipped", reason="Skipped by user")
         elif is_rate_limit:
             logger.warning(f"Rate limit hit for {issue.id}, will retry next cycle: {e}")
+            state.upsert_queue_meta(issue.id, status="queued", reason="Rate limit — retrying")
         else:
             logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
+            state.upsert_queue_meta(issue.id, status="failed")
         if not is_skip:
             failures[issue.id] = failures.get(issue.id, 0) + 1
             save_processed(processed, failures)
@@ -173,6 +188,7 @@ async def check_and_process(
                 logger.warning(f"Skipping issue after multiple failed attempts: {issue.id}")
                 state.log(issue.id, "Skipping issue after multiple failed attempts")
                 state.upsert_issue(issue.id, step="skipped", failed=True)
+                state.upsert_queue_meta(issue.id, status="skipped", reason="Failed after max retries")
                 processed.add(issue.id)
                 save_processed(processed, failures)
             else:
@@ -192,9 +208,11 @@ async def main_async(once: bool) -> None:
 
     watcher = DripsWatcher()
     processed, failures = load_processed()
+    _processed.update(processed)
+    _failures.update(failures)
 
     if once:
-        await check_and_process(watcher, processed, failures)
+        await check_and_process(watcher, _processed, _failures)
         return
 
     # 🔥 CRITICAL FOR RENDER
@@ -210,7 +228,7 @@ async def main_async(once: bool) -> None:
 
     await asyncio.gather(
         server.serve(),
-        poll_loop(watcher, processed, failures),
+        poll_loop(watcher, _processed, _failures),
     )
 
 

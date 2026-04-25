@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useWorkman } from "./hooks/useWorkman";
 import { IssueCard } from "./components/IssueCard";
 import { LogConsole } from "./components/LogConsole";
+import { QueuePanel } from "./components/QueuePanel";
 import type { LogRange } from "./types";
 import "./App.css";
 
@@ -10,6 +11,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
   const [paused, setPaused] = useState(false);
+  const [rightTab, setRightTab] = useState<"logs" | "queue">("logs");
 
   const issueList = Object.values(issues).sort(
     (a, b) =>
@@ -89,21 +91,34 @@ export default function App() {
 
         <section className="logs-panel">
           <div className="logs-header">
-            <span>Logs</span>
-            <div className="logs-controls">
-              <select
-                className="range-select"
-                value={range}
-                onChange={(e) => setRange(e.target.value as LogRange)}
-              >
-                <option value="1h">Past 1 hour</option>
-                <option value="24h">Past 24 hours</option>
-                <option value="3d">Past 3 days</option>
-              </select>
-              <span className="filter-label">{filterLabel}</span>
+            <div className="tab-switcher">
+              <button
+                className={`tab-btn ${rightTab === "logs" ? "tab-btn--active" : ""}`}
+                onClick={() => setRightTab("logs")}
+              >Logs</button>
+              <button
+                className={`tab-btn ${rightTab === "queue" ? "tab-btn--active" : ""}`}
+                onClick={() => setRightTab("queue")}
+              >Queue</button>
             </div>
+            {rightTab === "logs" && (
+              <div className="logs-controls">
+                <select
+                  className="range-select"
+                  value={range}
+                  onChange={(e) => setRange(e.target.value as LogRange)}
+                >
+                  <option value="1h">Past 1 hour</option>
+                  <option value="24h">Past 24 hours</option>
+                  <option value="3d">Past 3 days</option>
+                </select>
+                <span className="filter-label">{filterLabel}</span>
+              </div>
+            )}
           </div>
-          <LogConsole logs={logs} filterId={selectedId} />
+          {rightTab === "logs"
+            ? <LogConsole logs={logs} filterId={selectedId} />
+            : <QueuePanel />}
         </section>
       </main>
     </div>

@@ -39,6 +39,8 @@ _db_lock = threading.Lock()
 _paused: bool = False
 _skip_requested: bool = False
 _current_issue_id: str | None = None
+_priority_issues: set[str] = set()
+_queue_meta: dict[str, dict] = {}  # issue_id -> {difficulty, score, reason, rank}
 
 
 def init(loop: asyncio.AbstractEventLoop) -> None:
@@ -113,6 +115,28 @@ def set_current_issue(issue_id: str | None) -> None:
 
 def get_current_issue() -> str | None:
     return _current_issue_id
+
+
+# ------------------------------------------------------------------ #
+# Queue metadata                                                       #
+# ------------------------------------------------------------------ #
+
+def upsert_queue_meta(issue_id: str, **kwargs) -> None:
+    if issue_id not in _queue_meta:
+        _queue_meta[issue_id] = {}
+    _queue_meta[issue_id].update(kwargs)
+
+def get_queue_meta(issue_id: str) -> dict:
+    return _queue_meta.get(issue_id, {})
+
+def set_priority(issue_id: str, value: bool) -> None:
+    if value:
+        _priority_issues.add(issue_id)
+    else:
+        _priority_issues.discard(issue_id)
+
+def is_priority(issue_id: str) -> bool:
+    return issue_id in _priority_issues
 
 
 # ------------------------------------------------------------------ #

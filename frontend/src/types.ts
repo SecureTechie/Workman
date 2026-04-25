@@ -7,7 +7,37 @@ export type Step =
   | "setup"
   | "solving"
   | "pushing"
-  | "done";
+  | "done"
+  | "skipped"
+  | "failed"
+  | "processing";
+
+export interface Issue {
+  id: string;
+  title: string;
+  step: Step;
+  failed: boolean;
+  pr_url: string | null;
+  error: string | null;
+  started_at: string;
+  updated_at: string;
+}
+
+export interface QueueItem {
+  id: string;
+  repo: string;
+  issue_number: number | null;
+  title: string;
+  url: string | null;
+  difficulty: "EASY" | "MEDIUM" | "HARD" | "UNKNOWN";
+  score: number;
+  status: string;
+  reason: string | null;
+  failures: number;
+  priority: boolean;
+  is_current: boolean;
+  rank: number;
+}
 
 export interface Issue {
   id: string;
