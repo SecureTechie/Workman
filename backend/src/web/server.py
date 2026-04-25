@@ -21,7 +21,7 @@ app = FastAPI(title="Workman API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "x-token"],
 )
 
@@ -60,6 +60,33 @@ async def api_logs(request: Request, range: str = Query("1h"), token: str = Quer
         raise HTTPException(status_code=400, detail=f"range must be one of: {', '.join(_LOG_RANGES)}")
     since = (datetime.now(timezone.utc) - _LOG_RANGES[range]).isoformat()
     return {"logs": state.get_logs_since(since), "range": range}
+
+
+@app.post("/api/control/skip-current")
+async def control_skip(request: Request, token: str = Query(default="")):
+    _check_token("/api/control/skip-current", _resolve_token(request, token))
+    logger.info("User requested skip current task")
+    state.log(None, "User requested skip current task")
+    state.request_skip()
+    return {"ok": True, "action": "skip-current"}
+
+
+@app.post("/api/control/pause")
+async def control_pause(request: Request, token: str = Query(default="")):
+    _check_token("/api/control/pause", _resolve_token(request, token))
+    logger.info("Bot paused")
+    state.log(None, "Bot paused")
+    state.set_paused(True)
+    return {"ok": True, "action": "pause"}
+
+
+@app.post("/api/control/resume")
+async def control_resume(request: Request, token: str = Query(default="")):
+    _check_token("/api/control/resume", _resolve_token(request, token))
+    logger.info("Bot resumed")
+    state.log(None, "Bot resumed")
+    state.set_paused(False)
+    return {"ok": True, "action": "resume"}
 
 
 @app.websocket("/ws")

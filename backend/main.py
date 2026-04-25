@@ -140,6 +140,14 @@ async def check_and_process(
 
     ranked.sort(key=lambda x: PRIORITY[x[1]])
     issue, difficulty = ranked[0]
+
+    if state.is_paused():
+        logger.info("Bot is paused — skipping processing this cycle")
+        state.log(None, "Bot is paused — skipping processing this cycle")
+        return
+
+    state.set_current_issue(issue.id)
+    state.clear_skip()
     logger.info(f"Processing {issue.id} [{difficulty}]...")
     try:
         pr_url = await asyncio.to_thread(run_pipeline, issue)
@@ -149,20 +157,29 @@ async def check_and_process(
         save_processed(processed, failures)
     except Exception as e:
         is_rate_limit = isinstance(e, RateLimitError)
-        if is_rate_limit:
+        is_skip = state.skip_requested()
+        if is_skip:
+            logger.info(f"Issue {issue.id} skipped by user request")
+            state.log(issue.id, "Skipped by user request — will retry next cycle")
+            state.upsert_issue(issue.id, step="skipped", failed=False)
+        elif is_rate_limit:
             logger.warning(f"Rate limit hit for {issue.id}, will retry next cycle: {e}")
         else:
             logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
-        failures[issue.id] = failures.get(issue.id, 0) + 1
-        save_processed(processed, failures)
-        if failures[issue.id] >= MAX_RETRIES:
-            logger.warning(f"Skipping issue after multiple failed attempts: {issue.id}")
-            state.log(issue.id, "Skipping issue after multiple failed attempts")
-            state.upsert_issue(issue.id, step="skipped", failed=True)
-            processed.add(issue.id)
+        if not is_skip:
+            failures[issue.id] = failures.get(issue.id, 0) + 1
             save_processed(processed, failures)
-        else:
-            state.log(issue.id, f"{'Rate limit hit' if is_rate_limit else 'Pipeline failed'} — will retry next poll cycle ({failures[issue.id]}/{MAX_RETRIES} attempts)")
+            if failures[issue.id] >= MAX_RETRIES:
+                logger.warning(f"Skipping issue after multiple failed attempts: {issue.id}")
+                state.log(issue.id, "Skipping issue after multiple failed attempts")
+                state.upsert_issue(issue.id, step="skipped", failed=True)
+                processed.add(issue.id)
+                save_processed(processed, failures)
+            else:
+                state.log(issue.id, f"{'Rate limit hit' if is_rate_limit else 'Pipeline failed'} — will retry next poll cycle ({failures[issue.id]}/{MAX_RETRIES} attempts)")
+    finally:
+        state.set_current_issue(None)
+        state.clear_skip()
 
 
 # ---------------- MAIN ---------------- #

@@ -98,5 +98,13 @@ export function useWorkman() {
     return () => controller.abort();
   }, [range]);
 
-  return { issues, logs, steps, connected, range, setRange };
+  return { issues, logs, steps, connected, range, setRange, control };
+}
+
+async function control(action: "skip-current" | "pause" | "resume"): Promise<void> {
+  const url = TOKEN
+    ? `${API_URL}/api/control/${action}?token=${encodeURIComponent(TOKEN)}`
+    : `${API_URL}/api/control/${action}`;
+  const r = await fetch(url, { method: "POST" });
+  if (!r.ok) throw new Error(`${action} failed: ${r.status}`);
 }

@@ -265,3 +265,51 @@ body,
     font-size: 14px;
   }
 }
+
+/* ── control buttons ── */
+.ctrl-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.ctrl-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-header);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.ctrl-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ctrl-btn--yellow {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+.ctrl-btn--yellow:hover {
+  opacity: 0.75;
+}
+.ctrl-btn--green {
+  border-color: var(--green);
+  color: var(--green);
+}
+.ctrl-btn--green:hover {
+  opacity: 0.75;
+}
+
+.ctrl-feedback {
+  font-family: var(--font-header);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.ctrl-feedback--ok  { color: var(--green); }
+.ctrl-feedback--err { color: var(--red); }

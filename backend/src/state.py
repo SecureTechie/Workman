@@ -36,6 +36,9 @@ _main_loop: asyncio.AbstractEventLoop | None = None
 _log_queue: asyncio.Queue | None = None
 _db: sqlite3.Connection | None = None
 _db_lock = threading.Lock()
+_paused: bool = False
+_skip_requested: bool = False
+_current_issue_id: str | None = None
 
 
 def init(loop: asyncio.AbstractEventLoop) -> None:
@@ -80,6 +83,36 @@ def upsert_issue(issue_id: str, **kwargs) -> None:
 
 def get_all() -> list[dict]:
     return list(_issues.values())
+
+
+# ------------------------------------------------------------------ #
+# Bot control                                                          #
+# ------------------------------------------------------------------ #
+
+def set_paused(value: bool) -> None:
+    global _paused
+    _paused = value
+
+def is_paused() -> bool:
+    return _paused
+
+def request_skip() -> None:
+    global _skip_requested
+    _skip_requested = True
+
+def clear_skip() -> None:
+    global _skip_requested
+    _skip_requested = False
+
+def skip_requested() -> bool:
+    return _skip_requested
+
+def set_current_issue(issue_id: str | None) -> None:
+    global _current_issue_id
+    _current_issue_id = issue_id
+
+def get_current_issue() -> str | None:
+    return _current_issue_id
 
 
 # ------------------------------------------------------------------ #

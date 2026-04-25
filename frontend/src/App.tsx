@@ -6,8 +6,10 @@ import type { LogRange } from "./types";
 import "./App.css";
 
 export default function App() {
-  const { issues, logs, steps, connected, range, setRange } = useWorkman();
+  const { issues, logs, steps, connected, range, setRange, control } = useWorkman();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [paused, setPaused] = useState(false);
 
   const issueList = Object.values(issues).sort(
     (a, b) =>
@@ -21,14 +23,48 @@ export default function App() {
     ? `#${selectedId.split("#")[1] ?? selectedId}`
     : "all";
 
+  async function handleControl(action: "skip-current" | "pause" | "resume") {
+    try {
+      await control(action);
+      if (action === "pause") setPaused(true);
+      if (action === "resume") setPaused(false);
+      setFeedback({ msg: action === "skip-current" ? "Skipped" : action === "pause" ? "Paused" : "Resumed", ok: true });
+    } catch {
+      setFeedback({ msg: "Request failed", ok: false });
+    } finally {
+      setTimeout(() => setFeedback(null), 2500);
+    }
+  }
+
   return (
     <div className="layout">
       <header className="header">
         <img src="/workman.png" alt="Workman" className="logo" />
-        <span className="conn">
-          <span className={`dot ${connected ? "on" : "off"}`} />
-          {connected ? "connected" : "reconnecting..."}
-        </span>
+        <div className="header-right">
+          <div className="ctrl-buttons">
+            <button className="ctrl-btn" onClick={() => handleControl("skip-current")} title="Skip current task">
+              Skip
+            </button>
+            {paused ? (
+              <button className="ctrl-btn ctrl-btn--green" onClick={() => handleControl("resume")} title="Resume processing">
+                Resume
+              </button>
+            ) : (
+              <button className="ctrl-btn ctrl-btn--yellow" onClick={() => handleControl("pause")} title="Pause processing">
+                Pause
+              </button>
+            )}
+          </div>
+          {feedback && (
+            <span className={`ctrl-feedback ${feedback.ok ? "ctrl-feedback--ok" : "ctrl-feedback--err"}`}>
+              {feedback.msg}
+            </span>
+          )}
+          <span className="conn">
+            <span className={`dot ${connected ? "on" : "off"}`} />
+            {connected ? "connected" : "reconnecting..."}
+          </span>
+        </div>
       </header>
 
       <main className="main">

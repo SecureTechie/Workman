@@ -95,6 +95,8 @@ def run_pipeline(issue: DripsIssue) -> str:
         _step(iid, "solving", "Claude is analyzing the issue and writing the fix...")
         solver = make_solver(runner, repo_path)
         fix_summary = solver.solve(issue.title, issue.description, available_tools=available_tools)
+        if state.skip_requested():
+            raise RuntimeError("Skip requested by user")
         state.log(iid, f"Fix complete: {fix_summary}")
 
         # 6. Push
