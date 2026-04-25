@@ -10,6 +10,11 @@ from src.docker.manager import NativeRunner
 
 logger = logging.getLogger(__name__)
 
+
+class RateLimitError(RuntimeError):
+    """Raised when the AI provider returns a rate-limit error after all retries."""
+    pass
+
 TOOLS = [
     {
         "type": "function",
@@ -369,6 +374,7 @@ class GeminiSolver:
         """Call generate_content with up to 3 retries on 429 RESOURCE_EXHAUSTED."""
         max_retries = 3
         default_wait = 60
+        last_exc = None
         for attempt in range(1, max_retries + 2):  # attempts 1..4, retries 1..3
             try:
                 return self.client.models.generate_content(
@@ -379,19 +385,22 @@ class GeminiSolver:
             except Exception as e:
                 err_str = str(e)
                 is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
-                if not is_rate_limit or attempt > max_retries:
+                if not is_rate_limit:
                     logger.error(f"Gemini API error: {e}")
                     raise
-                # Try to extract retryDelay from the error message, e.g. "retryDelay: '60s'"
-                wait = default_wait
+                last_exc = e
+                if attempt > max_retries:
+                    break
                 m = re.search(r"retryDelay[^']*'(\d+)s'", err_str)
-                if m:
-                    wait = int(m.group(1))
+                wait = int(m.group(1)) if m else default_wait
                 logger.warning(
                     f"Gemini rate limit hit, waiting {wait}s before retry "
                     f"(attempt {attempt}/{max_retries})..."
                 )
                 time.sleep(wait)
+        raise RateLimitError(
+            f"Gemini rate limit persisted after {max_retries} retries"
+        ) from last_exc
 
     def solve(
         self,

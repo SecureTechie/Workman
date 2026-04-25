@@ -21,6 +21,7 @@ from src import state
 from src.drips.watcher import DripsWatcher
 from src.github.client import GitHubClient
 from src.pipeline import run_pipeline
+from src.solver.agent import RateLimitError
 from src.web.server import app
 
 # ---------------- LOGGING ---------------- #
@@ -116,18 +117,27 @@ async def check_and_process(
         else:
             actionable.append(issue)
 
-    for issue in actionable:
-        logger.info(f"Processing {issue.id}...")
-        try:
-            pr_url = await asyncio.to_thread(run_pipeline, issue)
-            logger.info(f"SUCCESS — PR: {pr_url}")
-            processed.add(issue.id)
-            failures.pop(issue.id, None)
-            save_processed(processed, failures)
-        except Exception as e:
-            failures[issue.id] = failures.get(issue.id, 0) + 1
-            save_processed(processed, failures)
-            logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
+    if not actionable:
+        return
+
+    # Process exactly one issue per cycle — avoids hammering the AI provider
+    # and keeps rate-limit recovery simple.
+    issue = actionable[0]
+    logger.info(f"Processing {issue.id}...")
+    try:
+        pr_url = await asyncio.to_thread(run_pipeline, issue)
+        logger.info(f"SUCCESS — PR: {pr_url}")
+        processed.add(issue.id)
+        failures.pop(issue.id, None)
+        save_processed(processed, failures)
+    except RateLimitError as e:
+        # Do not count as a failure — just stop this cycle and retry next poll.
+        logger.warning(f"Rate limit hit for {issue.id}, will retry next cycle: {e}")
+        state.log(issue.id, f"Rate limit hit — will retry next poll cycle")
+    except Exception as e:
+        failures[issue.id] = failures.get(issue.id, 0) + 1
+        save_processed(processed, failures)
+        logger.error(f"Pipeline failed for {issue.id}: {e}", exc_info=True)
 
 
 # ---------------- MAIN ---------------- #
