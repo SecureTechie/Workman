@@ -167,13 +167,19 @@ async def main_async(once: bool) -> None:
 def _validate_config() -> None:
     missing = [
         k
-        for k, v in [
-            ("GITHUB_TOKEN", config.GITHUB_TOKEN),
-            ("GITHUB_USERNAME", config.GITHUB_USERNAME),
-            ("OPENAI_API_KEY", config.OPENAI_API_KEY),
-        ]
+        for k, v in [("GITHUB_TOKEN", config.GITHUB_TOKEN), ("GITHUB_USERNAME", config.GITHUB_USERNAME)]
         if not v
     ]
+    provider_key = {
+        "gemini":    ("GEMINI_API_KEY",    config.GEMINI_API_KEY),
+        "openai":    ("OPENAI_API_KEY",    config.OPENAI_API_KEY),
+        "anthropic": ("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY),
+    }.get(config.AI_PROVIDER)
+    if provider_key is None:
+        logger.error(f"Unknown AI_PROVIDER: '{config.AI_PROVIDER}'. Must be gemini, openai, or anthropic.")
+        sys.exit(1)
+    if not provider_key[1]:
+        missing.append(provider_key[0])
     if missing:
         logger.error(f"Missing env vars: {', '.join(missing)}")
         sys.exit(1)

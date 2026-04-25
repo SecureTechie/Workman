@@ -3,8 +3,6 @@ import logging
 import shlex
 from pathlib import Path
 
-from openai import OpenAI
-
 import config
 from src.docker.manager import NativeRunner
 
@@ -167,6 +165,7 @@ FALLBACK_MODEL = "gpt-4.1-mini"
 
 class IssueSolver:
     def __init__(self, runner: NativeRunner, repo_path: Path):
+        from openai import OpenAI
         self.client = OpenAI(api_key=config.OPENAI_API_KEY)
         self.runner = runner
         self.repo_path = repo_path
@@ -330,3 +329,182 @@ class IssueSolver:
             parts.append(f"[stderr]\n{r['stderr'].strip()}")
         parts.append(f"[exit code: {r['exit_code']}]")
         return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Gemini solver
+# ---------------------------------------------------------------------------
+
+# Map OpenAI tool schema → Gemini FunctionDeclaration dicts
+def _to_gemini_tools() -> list[dict]:
+    from google.genai import types as gtypes  # noqa: F401 — validate import at call time
+    declarations = []
+    for t in TOOLS:
+        fn = t["function"]
+        params = fn.get("parameters", {})
+        declarations.append({
+            "name": fn["name"],
+            "description": fn["description"],
+            "parameters": {
+                "type": params.get("type", "object"),
+                "properties": params.get("properties", {}),
+                "required": params.get("required", []),
+            },
+        })
+    return [{"function_declarations": declarations}]
+
+
+class GeminiSolver:
+    def __init__(self, runner: NativeRunner, repo_path: Path):
+        from google import genai
+        self.client = genai.Client(api_key=config.GEMINI_API_KEY)
+        self.runner = runner
+        self.repo_path = repo_path
+        logger.info("Using Gemini provider")
+        logger.info(f"Gemini model: {config.GEMINI_MODEL}")
+
+    def solve(
+        self,
+        issue_title: str,
+        issue_body: str,
+        available_tools: list[str] | None = None,
+    ) -> str:
+        from google.genai import types as gtypes
+
+        tools_section = ""
+        if available_tools:
+            tools_section = (
+                f"\n\nVerification binaries available on PATH: {', '.join(available_tools)}."
+            )
+
+        user_message = (
+            f"# Issue: {issue_title}\n\n"
+            f"{issue_body}{tools_section}\n\n"
+            "Please fix this issue. Start by exploring the repository structure."
+        )
+
+        gemini_tools = _to_gemini_tools()
+        contents = [
+            {"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + user_message}]}
+        ]
+
+        iterations = 0
+        while iterations < config.MAX_SOLVER_ITERATIONS:
+            iterations += 1
+            logger.info(f"Solver iteration {iterations} (model={config.GEMINI_MODEL})")
+
+            try:
+                response = self.client.models.generate_content(
+                    model=config.GEMINI_MODEL,
+                    contents=contents,
+                    config=gtypes.GenerateContentConfig(tools=gemini_tools),
+                )
+            except Exception as e:
+                logger.error(f"Gemini API error: {e}")
+                raise
+
+            candidate = response.candidates[0]
+            parts = candidate.content.parts
+
+            # Append assistant turn
+            contents.append({"role": "model", "parts": [p._raw for p in parts]})
+
+            # Collect function calls from this turn
+            fn_calls = [p.function_call for p in parts if p.function_call is not None]
+
+            if not fn_calls:
+                # Text-only response — extract and return
+                text = "".join(p.text for p in parts if p.text)
+                return text or "Fix completed."
+
+            # Execute each tool call and collect results
+            tool_results = []
+            for fc in fn_calls:
+                name = fc.name
+                args = dict(fc.args)
+                logger.info(f"Tool: {name}({str(args)[:120]})")
+
+                if name == "finish":
+                    summary = args.get("summary", "Issue fixed.")
+                    logger.info(f"Solver finished: {summary}")
+                    return summary
+
+                result = self._dispatch(name, args)
+                tool_results.append({
+                    "function_response": {
+                        "name": name,
+                        "response": {"output": result[:8000]},
+                    }
+                })
+
+            contents.append({"role": "user", "parts": tool_results})
+
+        raise RuntimeError(
+            f"Solver hit max iterations ({config.MAX_SOLVER_ITERATIONS}) without finishing"
+        )
+
+    def _dispatch(self, name: str, inp: dict) -> str:
+        if name == "read_file":
+            return self._read(inp["path"])
+        if name == "write_file":
+            return self._write(inp["path"], inp["content"])
+        if name == "list_files":
+            return self._list(inp.get("path", "."))
+        if name == "search_code":
+            return self._search(inp["pattern"], inp.get("path", "."))
+        if name == "run_command":
+            return self._run(inp["command"])
+        return f"Unknown tool: {name}"
+
+    def _read(self, rel_path: str) -> str:
+        try:
+            return (self.repo_path / rel_path).read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            return f"ERROR: File not found: {rel_path}"
+        except Exception as e:
+            return f"ERROR reading {rel_path}: {e}"
+
+    def _write(self, rel_path: str, content: str) -> str:
+        try:
+            p = self.repo_path / rel_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+            return f"Written: {rel_path}"
+        except Exception as e:
+            return f"ERROR writing {rel_path}: {e}"
+
+    def _list(self, rel_path: str) -> str:
+        p = self.repo_path / rel_path
+        if not p.exists():
+            return f"ERROR: Path does not exist: {rel_path}"
+        entries = [f"{item.name}{'/' if item.is_dir() else ''}" for item in sorted(p.iterdir())]
+        return "\n".join(entries) if entries else "(empty)"
+
+    def _search(self, pattern: str, path: str) -> str:
+        r = self.runner.exec(
+            f"grep -rn -e {shlex.quote(pattern)} {shlex.quote(path)} 2>/dev/null | head -60"
+        )
+        return r["stdout"].strip() or f"No matches for '{pattern}' in {path}"
+
+    def _run(self, command: str) -> str:
+        r = self.runner.exec(command)
+        parts = []
+        if r["stdout"].strip():
+            parts.append(r["stdout"].strip())
+        if r["stderr"].strip():
+            parts.append(f"[stderr]\n{r['stderr'].strip()}")
+        parts.append(f"[exit code: {r['exit_code']}]")
+        return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def make_solver(runner: NativeRunner, repo_path: Path) -> "IssueSolver | GeminiSolver":
+    provider = config.AI_PROVIDER
+    if provider == "gemini":
+        return GeminiSolver(runner, repo_path)
+    if provider == "openai":
+        return IssueSolver(runner, repo_path)
+    raise ValueError(f"Unsupported AI_PROVIDER: '{provider}'")

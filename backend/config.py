@@ -7,7 +7,13 @@ load_dotenv()
 # Required — validated at startup in main.py
 GITHUB_TOKEN      = os.getenv("GITHUB_TOKEN")
 GITHUB_USERNAME   = os.getenv("GITHUB_USERNAME")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY")
+
+# AI provider selection: "gemini" | "openai" | "anthropic"
+AI_PROVIDER  = os.getenv("AI_PROVIDER", "gemini")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "300"))
 

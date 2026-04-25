@@ -7,7 +7,7 @@ from src import state
 from src.drips.models import DripsIssue
 from src.github.client import GitHubClient
 from src.docker.manager import NativeRunner, clone_repo, detect_language, push_and_commit
-from src.solver.agent import IssueSolver
+from src.solver.agent import make_solver
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def run_pipeline(issue: DripsIssue) -> str:
 
         # 5. Claude solver
         _step(iid, "solving", "Claude is analyzing the issue and writing the fix...")
-        solver = IssueSolver(runner, repo_path)
+        solver = make_solver(runner, repo_path)
         fix_summary = solver.solve(issue.title, issue.description, available_tools=available_tools)
         state.log(iid, f"Fix complete: {fix_summary}")
 
