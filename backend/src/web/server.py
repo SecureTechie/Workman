@@ -133,20 +133,22 @@ async def issues_queue(request: Request, token: str = Query(default=""),
         s_issue  = state_issues.get(iid, {})
         meta     = state.get_queue_meta(iid)
         failures = _main._failures.get(iid, 0)
-        in_proc  = _main._processed
 
-        # Determine status
+        # Determine status — never hide a live GitHub issue just because
+        # it's in _processed; only treat it as "done" if the pipeline
+        # actually completed it (step == "done" in state).
+        pipeline_step = s_issue.get("step", "")
         if iid == current_id:
             status = "processing"
-        elif s_issue.get("step") == "done" or iid in in_proc and s_issue.get("step") == "done":
+        elif pipeline_step == "done":
             status = "done"
         elif s_issue.get("failed") and failures >= _main.MAX_RETRIES:
             status = "skipped"
-        elif s_issue.get("step") == "skipped":
+        elif pipeline_step == "skipped":
             status = "skipped"
-        elif iid in in_proc:
-            status = "done"  # processed and not failed = done
-        elif meta.get("status") in ("failed", "skipped"):
+        elif pipeline_step in ("fetching", "forking", "cloning", "setup", "solving", "pushing"):
+            status = "processing"
+        elif meta.get("status") in ("failed", "skipped", "queued", "processing"):
             status = meta["status"]
         else:
             status = "queued"
@@ -264,7 +266,7 @@ async def issues_queue(request: Request, token: str = Query(default=""),
     for i, r in enumerate(rows):
         r["rank"] = i + 1
 
-    logger.info(f"Queue generated with {len(rows)} assigned issues")
+    logger.info(f"Queue generated with {len(rows)} live assigned issues")
     return {"queue": rows}
 
 
