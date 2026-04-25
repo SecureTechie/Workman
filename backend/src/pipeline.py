@@ -92,7 +92,9 @@ def run_pipeline(issue: DripsIssue) -> str:
         )
 
         # 5. Claude solver
-        _step(iid, "solving", "Claude is analyzing the issue and writing the fix...")
+        _PROVIDER_NAMES = {"gemini": "Gemini", "openai": "OpenAI", "anthropic": "Claude"}
+        provider_name = _PROVIDER_NAMES.get(config.AI_PROVIDER, config.AI_PROVIDER.capitalize())
+        _step(iid, "solving", f"{provider_name} is analyzing the issue and writing the fix...")
         solver = make_solver(runner, repo_path)
         fix_summary = solver.solve(issue.title, issue.description, available_tools=available_tools)
         if state.skip_requested():
