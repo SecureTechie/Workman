@@ -1,6 +1,8 @@
 import json
 import logging
+import re
 import shlex
+import time
 from pathlib import Path
 
 import config
@@ -363,6 +365,34 @@ class GeminiSolver:
         logger.info("Using Gemini provider")
         logger.info(f"Gemini model: {config.GEMINI_MODEL}")
 
+    def _generate(self, contents, gemini_tools, gtypes):
+        """Call generate_content with up to 3 retries on 429 RESOURCE_EXHAUSTED."""
+        max_retries = 3
+        default_wait = 60
+        for attempt in range(1, max_retries + 2):  # attempts 1..4, retries 1..3
+            try:
+                return self.client.models.generate_content(
+                    model=config.GEMINI_MODEL,
+                    contents=contents,
+                    config=gtypes.GenerateContentConfig(tools=gemini_tools),
+                )
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                if not is_rate_limit or attempt > max_retries:
+                    logger.error(f"Gemini API error: {e}")
+                    raise
+                # Try to extract retryDelay from the error message, e.g. "retryDelay: '60s'"
+                wait = default_wait
+                m = re.search(r"retryDelay[^']*'(\d+)s'", err_str)
+                if m:
+                    wait = int(m.group(1))
+                logger.warning(
+                    f"Gemini rate limit hit, waiting {wait}s before retry "
+                    f"(attempt {attempt}/{max_retries})..."
+                )
+                time.sleep(wait)
+
     def solve(
         self,
         issue_title: str,
@@ -399,11 +429,7 @@ class GeminiSolver:
             logger.info(f"Solver iteration {iterations} (model={config.GEMINI_MODEL})")
 
             try:
-                response = self.client.models.generate_content(
-                    model=config.GEMINI_MODEL,
-                    contents=contents,
-                    config=gtypes.GenerateContentConfig(tools=gemini_tools),
-                )
+                response = self._generate(contents, gemini_tools, gtypes)
             except Exception as e:
                 logger.error(f"Gemini API error: {e}")
                 raise
