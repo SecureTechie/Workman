@@ -8,7 +8,7 @@ interface Props {
   onClick: () => void;
 }
 
-const STEP_LABELS: Record<Step, string> = {
+const STEP_LABELS: Partial<Record<Step, string>> = {
   queued: "Queued",
   detected: "Detected",
   fetching: "Fetching",
@@ -18,6 +18,9 @@ const STEP_LABELS: Record<Step, string> = {
   solving: "Solving",
   pushing: "Pushing",
   done: "Done",
+  skipped: "Skipped",
+  failed: "Failed",
+  processing: "Processing",
 };
 
 export function IssueCard({ issue, steps, selected, onClick }: Props) {
