@@ -3,12 +3,10 @@ import type { Issue, LogEntry, LogRange, Step, WsMessage } from "../types";
 
 const MAX_LOGS = 10000;
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
-const DASHBOARD_TOKEN: string = import.meta.env.VITE_DASHBOARD_TOKEN ?? "";
+const API_URL: string = import.meta.env.VITE_API_URL;
+const TOKEN: string = import.meta.env.VITE_DASHBOARD_TOKEN ?? "";
 const WS_BASE = API_URL.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws";
-const WS_URL = DASHBOARD_TOKEN
-  ? `${WS_BASE}?token=${encodeURIComponent(DASHBOARD_TOKEN)}`
-  : WS_BASE;
+const WS_URL = TOKEN ? `${WS_BASE}?token=${encodeURIComponent(TOKEN)}` : WS_BASE;
 
 export function useWorkman() {
   const [issues, setIssues] = useState<Record<string, Issue>>({});
@@ -72,13 +70,10 @@ export function useWorkman() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const headers: HeadersInit = DASHBOARD_TOKEN
-      ? { Authorization: `Bearer ${DASHBOARD_TOKEN}` }
-      : {};
-    fetch(`${API_URL}/api/logs?range=${range}`, {
-      headers,
-      signal: controller.signal,
-    })
+    const logsUrl = TOKEN
+      ? `${API_URL}/api/logs?range=${range}&token=${encodeURIComponent(TOKEN)}`
+      : `${API_URL}/api/logs?range=${range}`;
+    fetch(logsUrl, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data: { logs: LogEntry[] }) => {
         const historical = data.logs ?? [];
